@@ -1,0 +1,30 @@
+body {
+
+  background: linear-gradient(135deg, #36d1dc 0%, #36d1dc 100%);
+ 
+}
+
+.container{
+  width:400px;
+}
+
+
+.input-group-text {
+  background-color: transparent;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-info:hover,
+.btn-outline-danger:hover {
+  color: white;
+}
+
+.rounded-circle {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
