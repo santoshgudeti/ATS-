@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import { Button, Modal, Form } from "react-bootstrap";
 import { io } from "socket.io-client";
 import { FaExpand, FaCompress } from "react-icons/fa";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -8,9 +9,19 @@ import { faVideo } from '@fortawesome/free-solid-svg-icons';
 import "./CandidateFiltering.css";
 
 const CandidateFiltering = () => {
-  const [candidates, setCandidates] = useState([]);
+  const [members, setMembers] = useState([]); // Store fetched members
+  const [filteredMembers, setFilteredMembers] = useState([]); // Store filtered results
   const [expandedLists, setExpandedLists] = useState({});
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [allSelected, setAllSelected] = useState({});
+  const [selectedFilters, setSelectedFilters] = useState({
+    skills: [],
+    designation: [],
+    degree: [],
+    company_names: [],
+    jobType: [],
+  });
+  const [showModal, setShowModal] = useState({});
 
   useEffect(() => {
     const socket = io("http://localhost:5000");
@@ -45,19 +56,20 @@ const CandidateFiltering = () => {
         );
         const data = await response.json();
 
-        const uniqueCandidates = data.filter((candidate, index, self) => {
+        const uniqueCandidates = data.filter((member, index, self) => {
           return (
             index ===
             self.findIndex(
               (c) =>
-                c.resumeId === candidate.resumeId &&
-                c.jobDescriptionId === candidate.jobDescriptionId
+                c.resumeId === member.resumeId &&
+                c.jobDescriptionId === member.jobDescriptionId
             )
           );
         });
 
         console.log("Fetched candidates:", uniqueCandidates);
-        setCandidates(uniqueCandidates);
+        setMembers(uniqueCandidates);
+        setFilteredMembers(uniqueCandidates); // Initially show all members
       } catch (error) {
         console.error("Error fetching candidate data:", error.message);
       }
@@ -66,6 +78,111 @@ const CandidateFiltering = () => {
     fetchCandidates();
   }, []);
 
+  const toggleModal = (filter) => {
+    setShowModal((prev) => ({ ...prev, [filter]: !prev[filter] }));
+  };
+
+  const handleFilterChange = (filterCategory, value) => {
+    setSelectedFilters((prevFilters) => ({
+      ...prevFilters,
+      [filterCategory]: value,
+    }));
+  };
+  const applyFilters = () => {
+    let filtered = members;
+
+    if (selectedFilters.jobType.length) {
+      filtered = filtered.filter((member) => {
+        const experienceStr = member.matchingResult[0]?.["Resume Data"]?.total_experience || "0 years";
+        const experienceYears = parseFloat(experienceStr); // Extract numeric value
+  
+        const isFresher = selectedFilters.jobType.includes("Fresher") && experienceYears === 0;
+        const isExperienced = selectedFilters.jobType.includes("Experienced") && experienceYears > 0;
+  
+        return isFresher || isExperienced;
+      });
+    }
+    if (selectedFilters.degree.length) {
+      filtered = filtered.filter((member) =>
+        selectedFilters.degree.some((degree) =>
+          member.matchingResult[0]?.["Resume Data"]?.degree
+            ?.join(", ")
+            .toLowerCase()
+            .includes(degree.toLowerCase())
+        )
+      );
+    }
+    if (selectedFilters.company_names.length) {
+      filtered = filtered.filter((member) =>
+        selectedFilters.company_names.some((company_name) =>
+          member.matchingResult[0]?.["Resume Data"]?.company_names
+            ?.join(", ")
+            .toLowerCase()
+            .includes(company_name.toLowerCase())
+        )
+      );
+    }
+    if (selectedFilters.skills.length) {
+      filtered = filtered.filter((member) =>
+        selectedFilters.skills.some((skills) =>
+          member.matchingResult[0]?.["Resume Data"]?.skills
+            ?.join(", ")
+            .toLowerCase()
+            .includes(skills.toLowerCase())
+        )
+      );
+    }
+   
+ 
+    if (selectedFilters.designation.length) {
+      filtered = filtered.filter((member) =>
+        selectedFilters.designation.some((designation) =>
+          member.matchingResult[0]?.["Resume Data"]?.designation
+            ?.join(", ")
+            .toLowerCase()
+            .includes(designation.toLowerCase())
+        )
+      );
+    }
+
+
+    setFilteredMembers(filtered);
+  };
+  const sortedFilteredMembers = [...filteredMembers].sort((a, b) => {
+    const aMatch = a.matchingResult?.[0]?.["Resume Data"]?.["Matching Percentage"] || 0;
+    const bMatch = b.matchingResult?.[0]?.["Resume Data"]?.["Matching Percentage"] || 0;
+    return bMatch - aMatch; // Descending order
+  });
+  const extractUniqueValues = (key) => {
+    if (key === "jobType") {
+      return ["Fresher", "Experienced"];
+    }
+    return [
+      ...new Set(
+        members.flatMap((member) =>
+          member.matchingResult[0]?.["Resume Data"]?.[key]?.flat() || []
+        )
+      ),
+    ];
+  };
+
+  const resetFilters = (filterCategory) => {
+    handleFilterChange(filterCategory, []);
+    setAllSelected((prev) => ({ ...prev, [filterCategory]: false }));
+  };
+
+  const resetAllFilters = () => {
+    setSelectedFilters({
+      skills: [],
+      designation: [],
+      degree: [],
+      company_names: [],
+      jobType: [],
+    });
+    setAllSelected({});
+    setFilteredMembers(members);
+  };
+
   const handleOpenLink = (url) => {
     window.open(url, '_blank'); // Opens the link in a new tab
   };
@@ -73,11 +190,11 @@ const CandidateFiltering = () => {
     return `http://localhost:5000/api/resumes/${resumeId}`;
   };
 
-  const sortedCandidates = candidates
-    .map((candidate) => ({
-      ...candidate,
+  const sortedCandidates = members
+    .map((member) => ({
+      ...member,
       matchingPercentage:
-        candidate.matchingResult?.[0]?.["Resume Data"]?.["Matching Percentage"] ||
+      member.matchingResult?.[0]?.["Resume Data"]?.["Matching Percentage"] ||
         0,
     }))
     .sort((a, b) => b.matchingPercentage - a.matchingPercentage);
@@ -114,21 +231,109 @@ const CandidateFiltering = () => {
   };
 
   return (
-    <div
-      className={`table-container CandidateFiltering ${
+    <div className={`table-container responsedisplay py-5 CandidateFiltering ${
         isFullScreen ? "fullscreen" : ""
       }`}
     >
       <div className="table-header">
         <h3>History</h3>
+        <div className="filter-buttons justify-content-center p-0 my-4 d-flex flex-wrap mb-3">
+        {["skills", "designation","jobType", "degree", "company_names"].map((filter) => (
+          <Button
+            key={filter}
+         variant="outline-fourth mt-1 bg-white"
+            className="me-2 filter-button"
+            onClick={() => toggleModal(filter)}
+          >
+            {filter.charAt(0).toUpperCase() + filter.slice(1)}
+          </Button>
+        ))}
+        <Button
+                  variant="outline-danger mt-1 bg-danger text-white "
+                  className="ms-2  filter-button"
+                  onClick={resetAllFilters}
+                >
+                  Reset All
+                </Button>
+                <Button
+                  variant="outline-success mt-1 bg-success text-white"
+                  className="ms-2 filter-button"
+                  onClick={applyFilters}
+                >
+                  Search
+                </Button>
+      </div>
+
+      {["skills", "designation","jobType", "degree", "company_names"].map((filter) => (
+        <Modal
+          key={filter}
+          show={showModal[filter] || false}
+          onHide={() => toggleModal(filter)}
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>{filter.charAt(0).toUpperCase() + filter.slice(1)}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form>
+              <Form.Check
+                type="checkbox"
+                label="Select All"
+                checked={allSelected[filter] || false}
+                onChange={(e) => {
+                  const isSelected = e.target.checked;
+                  const allValues = extractUniqueValues(filter);
+                  setAllSelected((prev) => ({ ...prev, [filter]: isSelected }));
+                  handleFilterChange(filter, isSelected ? allValues : []);
+                }}
+              />
+              {extractUniqueValues(filter).map((value, index) => (
+                <Form.Check
+                  key={index}
+                  type="checkbox"
+                  label={value}
+                  checked={selectedFilters[filter]?.includes(value) || false}
+                  onChange={(e) => {
+                    const selected = e.target.checked
+                      ? [...(selectedFilters[filter] || []), value]
+                      : selectedFilters[filter].filter((v) => v !== value);
+                    handleFilterChange(filter, selected);
+                  }}
+                />
+              ))}
+             </Form>
+                        </Modal.Body>
+                        <Modal.Footer>
+                          <Button variant="secondary" onClick={() => resetFilters(filter)}>
+                            Reset
+                          </Button>
+                          <Button variant="primary" onClick={applyFilters}>
+                            Apply
+                          </Button>
+                        </Modal.Footer>
+                      </Modal>
+      ))}
         <div className="controls">
+        <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Ask something you'd like to know about your candidates"
+                style={{ 
+                  backgroundColor: '#F9FAFB',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  paddingLeft: '36px',
+                  paddingRight: '16px',
+                  height: '38px'
+                }}
+              />
           <button
-            className="screen-toggle"
+            className="screen-toggle py-1 "
             onClick={() => setIsFullScreen(!isFullScreen)}
           >
             {isFullScreen ? (
               <>
-                <FaCompress style={{ marginRight: "5px" }} />
+                <FaCompress style={{ marginRight: "1px" }} />
                 Exit Full Screen
               </>
             ) : (
@@ -160,10 +365,10 @@ const CandidateFiltering = () => {
             </tr>
           </thead>
           <tbody>
-            {sortedCandidates.map((candidate, index) => {
-              const resumeData = candidate.matchingResult?.[0]?.["Resume Data"] || {};
+          {sortedFilteredMembers.map((member, index) => {
+              const resumeData = member.matchingResult?.[0]?.["Resume Data"] || {};
               return (
-                <tr key={candidate._id || index}>
+                <tr key={member._id || index}>
                   <td>{index + 1}</td>
                   <td>{resumeData?.["Job Title"] || "N/A"}</td>
                   <td>{resumeData.name || "N/A"}</td>
@@ -185,7 +390,7 @@ const CandidateFiltering = () => {
                   <td>{resumeData["Matching Percentage"] || "0"}%</td>
                   <td>
                     <a 
-                      href={handleResumeLink(candidate.resumeId?._id)} 
+                      href={handleResumeLink(member.resumeId?._id)} 
                       target="_blank"
                       className="view-link"
                       rel="noopener noreferrer"
@@ -193,7 +398,7 @@ const CandidateFiltering = () => {
                       View
                     </a>
                     <a 
-                      href={`${handleResumeLink(candidate.resumeId?._id)}?download=true`} 
+                      href={`${handleResumeLink(member.resumeId?._id)}?download=true`} 
                       target="_blank"
                       className="download-link"
                       rel="noopener noreferrer"

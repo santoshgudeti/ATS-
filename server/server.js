@@ -14,6 +14,7 @@ const path = require('path');
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
+
 dotenv.config();
 // Initialize Express app
 const app = express();
@@ -25,6 +26,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 // Middleware
 app.use(cors({ origin: '*' }));
+app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -65,50 +67,93 @@ const ApiResponse = mongoose.model('ApiResponse', ApiResponseSchema);
 // Multer Configuration
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
-// User Schema and Model
+
+
+
+
+// User Schema
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  role: { type: String, default: "user" }, // "user" or "admin"
+  usageCount: { type: Number, default: 0 }, // Tracks resume processing count
+});
+
+const User = mongoose.model("User", userSchema);
+
+// Authentication middleware
+const authenticate = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(401).json({ error: "Invalid token" });
+    req.userId = decoded.id;
+    next();
   });
-  
-  const User = mongoose.model("User", userSchema);
-  
-  // Authentication Routes
-  app.post("/signup", async (req, res) => {
-  const { name, email, password } = req.body;
-  
-  try {
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = new User({ name, email, password: hashedPassword });
-  await user.save();
-  res.status(201).json({ message: "User created successfully!" });
-  } catch (err) {
-  if (err.code === 11000) {
-  res.status(400).json({ error: "Email already exists" });
-  } else {
-  res.status(500).json({ error: "Internal server error" });
-  }
-  }
-  });
-  
-  app.post("/signin", async (req, res) => {
+};
+
+// Sign-in route
+app.post("/signin", async (req, res) => {
   const { email, password } = req.body;
-  
+
   try {
-  const user = await User.findOne({ email });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  
-  
-  const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) return res.status(401).json({ error: "Invalid credentials" });
-  
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
-  res.status(200).json({ message: "Login successful", token });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) return res.status(401).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    res.status(200).json({ message: "Login successful", token });
+    console.log(token);
   } catch (err) {
-  res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error" });
   }
-  });
+});
+
+// Profile route
+app.get("/profile", authenticate, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    console.log(user);
+
+    res.status(200).json(user);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+      app.get('/api/candidate-filtering', async (req, res) => {
+  try {
+    const responses = await ApiResponse.find()
+      .populate('resumeId', 'title filename')
+      .populate('jobDescriptionId', 'title filename')
+      .sort({ createdAt: -1 });
+    res.status(200).json(responses);
+  } catch (error) {
+    console.error('Error fetching candidate filtering data:', error.message);
+    res.status(500).json({ error: 'Failed to fetch candidate filtering data.' });
+  }
+});
+
+app.get('/api/resumes/:resumeId', async (req, res) => {
+  try {
+    const { resumeId } = req.params;
+    const resume = await Resume.findById(resumeId);
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${resume.filename}"`,
+    });
+    res.end(resume.pdf);
+  } catch (error) {
+    console.error('Error retrieving resume:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve resume.' });
+  }
+});
   // Helper: Calculate SHA-256 hash
   const calculateHash = (buffer) => {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -128,9 +173,24 @@ const emitApiResponseUpdate = (newResponse) => {
   io.emit('apiResponseUpdated', newResponse);
 };
 
-// Serve static files
-app.use('/uploads/resumes', express.static(path.join(__dirname, 'uploads/resumes')));
-app.use('/uploads/job_descriptions', express.static(path.join(__dirname, 'uploads/job_descriptions')));
+ // Authentication Routes
+ app.post("/signup", async (req, res) => {
+  const { name, email, password } = req.body;
+  
+  try {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const user = new User({ name, email, password: hashedPassword });
+  await user.save();
+  res.status(201).json({ message: "User created successfully!" });
+  } catch (err) {
+  if (err.code === 11000) {
+  res.status(400).json({ error: "Email already exists" });
+  } else {
+  res.status(500).json({ error: "Internal server error" });
+  }
+  }
+  });
+
 
 // POST Endpoint: Upload Resumes and Job Descriptions
 app.post('/api/submit', upload.fields([{ name: 'resumes' }, { name: 'job_description' }]), async (req, res) => {
@@ -201,8 +261,8 @@ app.post('/api/submit', upload.fields([{ name: 'resumes' }, { name: 'job_descrip
             emitApiResponseUpdate(savedResponse);
 
             results.push({
-              resume: resume.originalname,
-              jobDescription: jobDescription.originalname,
+              resumeId: resumeDoc._id,
+              jobDescriptionId: jobDescDoc._id,
               matchingResult: apiResponse.data['POST Response'],
             });
           }
@@ -221,45 +281,9 @@ app.post('/api/submit', upload.fields([{ name: 'resumes' }, { name: 'job_descrip
 });
 
 // GET Endpoints (Unchanged)
-app.get('/api/candidate-filtering', async (req, res) => {
-  try {
-    const responses = await ApiResponse.find()
-      .populate('resumeId', 'title filename')
-      .populate('jobDescriptionId', 'title filename')
-      .sort({ createdAt: -1 });
-    res.status(200).json(responses);
-  } catch (error) {
-    console.error('Error fetching candidate filtering data:', error.message);
-    res.status(500).json({ error: 'Failed to fetch candidate filtering data.' });
-  }
-});
 
-app.get('/api/resumes/:resumeId', async (req, res) => {
-  try {
-    const { resumeId } = req.params;
-    const resume = await Resume.findById(resumeId);
-    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
 
-    res.writeHead(200, {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${resume.filename}"`,
-    });
-    res.end(resume.pdf);
-  } catch (error) {
-    console.error('Error retrieving resume:', error.message);
-    res.status(500).json({ error: 'Failed to retrieve resume.' });
-  }
-});
 
-app.get('/api/local-resumes', (req, res) => {
-  try {
-    const files = fs.readdirSync(path.join(__dirname, 'uploads/resumes'));
-    res.status(200).json({ resumes: files.map((f) => ({ filename: f, path: `/uploads/resumes/${f}` })) });
-  } catch (error) {
-    console.error('Error fetching local resumes:', error.message);
-    res.status(500).json({ error: 'Failed to fetch local resumes.' });
-  }
-});
 
 // Start Server
 server.listen(PORT, () => {
@@ -355,7 +379,32 @@ if (!fs.existsSync(resumeDirectory)) {
 if (!fs.existsSync(jobDescriptionDirectory)) {
   fs.mkdirSync(jobDescriptionDirectory, { recursive: true });
 }
-
+ const authenticateToken = (req, res, next) => {
+      const token = req.header('Authorization');
+      if (!token) return res.status(401).json({ error: "Access Denied" });
+    console.log("error2")
+      jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        console.log("error2")
+        if (err) return res.status(403).json({ error: "Invalid Token" });
+        console.log("error2")
+        req.user = user;
+        console.log("error2")
+        next();
+      });
+    };
+    
+    app.get("/api/user", authenticateToken, async (req, res) => {
+      try {
+        const user = await User.findById(req.user.id);
+        console.log("error2")
+        if (!user) return res.status(404).json({ error: "User not found" });
+        res.json({ name: user.name, email: user.email });
+        console.log("User from DB:", user);
+      } catch (error) {
+        console.error("Error fetching user details:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
 // Update the `/api/submit` endpoint to save files locally
 app.post('/api/submit', upload.fields([{ name: 'resumes' }, { name: 'job_description' }]), async (req, res) => {
   try {

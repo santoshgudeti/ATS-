@@ -7,13 +7,19 @@ import CandidateFiltering from "./components/CandidateFiltering/CandidateFilteri
 import ResponseDisplay from "./components/Navbar/ResponseDisplay";
 import SignIn from "./components/Auth/SignIn";
 import SignUp from "./components/Auth/SignUp";
+import ChatBot from "./components/ChatBot/ChatBot";
 import "./App.css";
 
 export default function App() {
 const [token, setToken] = useState(null);
-const handleSignIn = (userToken) => {
-setToken(userToken);
-};
+const [userDetails, setUserDetails] = useState(null); // To store user details
+  
+  // Handle successful sign-in
+  const handleSignIn = (userToken, userData) => {
+    setToken(userToken);
+    setUserDetails(userData); // Save user details
+  };
+
 
 const [activeComponent, setActiveComponent] = useState("main"); // Track the active page/component
 const [resumeData, setResumeData] = useState([]); // State to store resume data
@@ -68,6 +74,7 @@ return (
                 role="tabpanel"
                 aria-labelledby="signin-tab"
               >
+                 {/* Pass handleSignIn to SignIn */}
                 <SignIn onSignIn={handleSignIn} />
               </div>
               <div
@@ -84,7 +91,8 @@ return (
       </div>
     ) : (
       <div className="APPA">
-        <Navbar setResponseData={setResponseData} />
+      {/* Pass userDetails as a prop to Navbar */}
+      <Navbar userDetails={userDetails} setResponseData={setResponseData} />
         <Sidebar 
           onComponentChange={handleComponentChange} 
           activeComponent={activeComponent} 
@@ -95,6 +103,9 @@ return (
               data={resumeData} 
               updateCandidatesData={updateCandidatesData} 
             />
+          )}
+          {activeComponent === "ChatBot"&&(
+            <ChatBot/>
           )}
           {activeComponent === "main" && <Mainpage />}
           {responseData && (

@@ -95,7 +95,7 @@
 
 /* Make the table responsive */
 .table-responsive.rd1 {
-  overflow-x: auto;
+ 
   max-width: 100%;
   margin-bottom: 20px;
 }

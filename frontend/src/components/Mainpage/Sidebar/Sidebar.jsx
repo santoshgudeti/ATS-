@@ -1,6 +1,6 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBars, faFilter, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
+import { faBars, faFilter, faCalendarAlt,faHistory } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft, faSlack } from '@fortawesome/free-brands-svg-icons';
 import { faVideo } from '@fortawesome/free-solid-svg-icons'; 
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +11,15 @@ const Sidebar = ({ onComponentChange, activeComponent }) => {
 
   const handleOpenLink = (url) => {
     window.open(url, '_blank'); // Opens the link in a new tab
+  };
+  const handleChatBotClick = () => {
+    if (activeComponent === 'ChatBot') {
+      navigate('/'); 
+      onComponentChange('main'); 
+    } else {
+      navigate('/ChatBot'); 
+      onComponentChange('ChatBot'); 
+    }
   };
 
   const handleCandidateFilteringClick = () => {
@@ -36,10 +45,18 @@ const Sidebar = ({ onComponentChange, activeComponent }) => {
       <div className="icon-wrapper">
         <div className="sidebar-icon" onClick={handleCandidateFilteringClick}>
           <FontAwesomeIcon icon={faFilter} />
-          <span className="icon-label">Candidate Filtering</span>
+          <span className="icon-label">Skill History</span>
         </div>
       </div>
-
+      <div>
+      {/* History Button */}
+      <div className="icon-wrapper">
+      <div className="sidebar-icon" onClick={handleChatBotClick}>
+        <FontAwesomeIcon icon={faHistory}  />
+        <span className="icon-label">ChatBot History</span>
+        </div>
+      </div>
+    </div>
       {/* Schedule Meeting Icon */}
       <div className="icon-wrapper">
         <div className="sidebar-icon">

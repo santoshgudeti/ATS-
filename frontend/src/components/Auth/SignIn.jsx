@@ -9,18 +9,27 @@ const SignIn = ({ onSignIn }) => {
   const handleSignIn = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-
     try {
       const response = await axios.post("http://localhost:5000/signin", { email, password });
       alert("Login successful");
-      onSignIn(response.data.token);
+      
+      localStorage.setItem("token", response.data.token);
+      console.log('token',response.data.token)
+      const userDetails = await axios.get("http://localhost:5000/profile", {
+        headers: { Authorization: `Bearer ${response.data.token}` },
+        
+      });
+      onSignIn({ token: response.data.token, user: userDetails.data });
+      console.log('the second token',token);
+      console.log('the second token',user);
+    
     } catch (error) {
       alert(error.response?.data?.error || "Login failed");
     } finally {
       setIsLoading(false);
     }
   };
-
+    
   return (
     <div className="container">
       <div className="card shadow-lg border-0">
